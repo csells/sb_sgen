@@ -3,10 +3,11 @@ import 'package:jiffy/jiffy.dart';
 import 'package:path/path.dart' as pathutil;
 import 'package:yaml/yaml.dart' as yaml;
 import 'package:meta/meta.dart';
+import 'package:markdown/markdown.dart';
 
 main(List<String> args) async {
   var dir = '/Users/csells/Code/sb-blot';
-  var files = await Directory(dir).list(recursive: true).ofType<File>().where((f) => f.isMarkdown || f.isHtml).toList();
+  var files = await Directory(dir).list(recursive: true).ofType<File>().where((f) => f.isMarkdown || f.isHtml).take(10).toList();
   for (var meta in (await Metadata.fromFiles(files)).where((m) => !m.isDraft)) {
     print('filename= ${meta.filename}');
     print('  title= ${meta.title}');
@@ -62,7 +63,7 @@ class Metadata {
     return Metadata(
       filename: file.path,
       title: meta['Title'],
-      blurb: 'TODO', // TODO
+      blurb: meta['Blurb'],
       image: meta.containsKey('Image') ? Uri.parse(meta['Image']) : null,
       date: meta.containsKey('Date') ? Jiffy(meta['Date'], 'MM/dd/yyy').utc() : (await file.stat()).changed.toUtc(),
       permalink: permalink,
@@ -77,9 +78,11 @@ class Metadata {
   static final _htmlImgRE = RegExp(r'<img(\s|[^>])*src=[' '"](?<src>[^' '"]*)[' '"]', multiLine: true);
   static final _htmlH1RE = RegExp(r'<h1>(?<title>[^<]*)<\/h1>');
   static final _mdH1RE = RegExp(r'^#(?<title>.*$)');
+  static final _htmlStripTagsRE = RegExp(r'<[^>]+>', multiLine: true);
+  static final _collapseWhitespaceRE = RegExp(r'\s\s+');
 
-  // Title: first '# title' or first '<h1>title</h1>' (TODO)
-  // Blurb: the first few lines of content in plain text (TODO)
+  // Title: first '# title' or first '<h1>title</h1>'
+  // Blurb: the first few lines of content in plain text
   // Image: primary image (aka first image)
   // Date: metadata or file date (UTC)
   // Permalink: metadata or base filename no extension
@@ -123,14 +126,14 @@ class Metadata {
     }
 
     // grab "name: value" pairs
-    final metadata = Map<String, String>();
+    final meta = Map<String, String>();
     if (metadataLines.isNotEmpty) {
       final map = yaml.loadYaml(metadataLines.join('\n')) as yaml.YamlMap;
-      for (var key in map.keys) metadata[key] = map[key].toString();
+      for (var key in map.keys) meta[key] = map[key].toString();
     }
 
     // the rest is the body of the content
-    metadata['BodyStartLine'] = bodyStartLine.toString();
+    meta['BodyStartLine'] = bodyStartLine.toString();
     var body = lines.skip(bodyStartLine).join('\n');
 
     // grab title
@@ -139,14 +142,18 @@ class Metadata {
     var title = titleRE.firstMatch(body)?.namedGroup('title')?.trim();
     if (title == null) title = lines.skip(bodyStartLine).take(1).first;
     assert(title != null && title.isNotEmpty);
-    metadata['Title'] = title;
+    meta['Title'] = title;
 
     // grab image from the body of the content
     var image = _htmlImgRE.firstMatch(body)?.namedGroup('src');
-    if (image != null) metadata['Image'] = image;
-    assert(metadata['Image'] != null || !body.contains('<img'));
+    if (image != null) meta['Image'] = image;
+    assert(meta['Image'] != null || !body.contains('<img'));
 
-    return metadata;
+    // grab the blurb
+    final someHtml = file.isHtml ? body.substring(0, 1024) : markdownToHtml(body.substring(0, 1024));
+    meta['Blurb'] = someHtml.replaceAll(_htmlStripTagsRE, ' ').trimLeft().stripLeading(title).trimLeft().replaceAll(_collapseWhitespaceRE, ' ').replaceAll(' .', '.').replaceAll(' ,', ',').replaceAll(' !', '!').replaceAll(' ?', '?').replaceAll(' ;', ';').truncateWithEllipsis(256);
+
+    return meta;
   }
 }
 
@@ -156,6 +163,8 @@ extension MyStream<T> on Stream<T> {
 
 extension on String {
   int compareNoCase(String other) => this.toLowerCase().compareTo(other.toLowerCase());
+  String stripLeading(String leading) => this.startsWith(leading) ? this.substring(leading.length) : this;
+  String truncateWithEllipsis(int cutoff) => this.length > cutoff ? '${this.substring(0, cutoff)}...' : this;
 }
 
 extension on File {
