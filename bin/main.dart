@@ -31,6 +31,7 @@ class Metadata {
   final List<String> tags;
   final bool isPage;
   final bool isDraft;
+  final int bodyStartLine;
 
   Metadata({
     @required this.filename,
@@ -43,41 +44,51 @@ class Metadata {
     @required this.tags,
     @required this.isPage,
     @required this.isDraft,
+    @required this.bodyStartLine,
   });
 
   static Future<List<Metadata>> fromFiles(Iterable<File> files) async {
     var metadata = List<Metadata>();
     for (var file in files) {
-      metadata.add(await Metadata.ctor(file));
+      metadata.add(await Metadata.fromFile(file));
     }
     return metadata;
   }
 
-  static Future<Metadata> ctor(File file) async {
+  static Future<Metadata> fromFile(File file) async {
     final meta = await _getMetadataFromFile(file);
-
-    final filename = file.path;
-    final title = 'TODO'; // TODO
-    final blurb = 'TODO'; // TODO
-    final image = Uri.parse('https://todo.com/todo.png'); // TODO
-    final date = meta.containsKey('Date') ? Jiffy(meta['Date'], 'MM/dd/yyy').utc() : (await file.stat()).changed.toUtc();
     final permalink = meta.containsKey('Permalink') ? meta['Permalink'] : pathutil.basenameWithoutExtension(file.path);
-    final disqus = meta.containsKey('Disqus') ? meta['Permalink'] : permalink;
-    final tags = meta.containsKey('Tags') ? meta['Tags'].split(',') : List<String>();
-    final isPage = meta.containsKey('Page') ? meta['Page'] == 'yes' : false;
-    final isDraft = pathutil.basenameWithoutExtension(file.path).toLowerCase().contains('[draft]');
-    return Metadata(filename: filename, title: title, blurb: blurb, image: image, date: date, permalink: permalink, disqus: disqus, tags: tags, isPage: isPage, isDraft: isDraft);
+
+    return Metadata(
+      filename: file.path,
+      title: 'TODO', // TODO
+      blurb: 'TODO', // TODO
+      image: meta.containsKey('Image') ? Uri.parse(meta['Image']) : null,
+      date: meta.containsKey('Date') ? Jiffy(meta['Date'], 'MM/dd/yyy').utc() : (await file.stat()).changed.toUtc(),
+      permalink: permalink,
+      disqus: meta.containsKey('Disqus') ? meta['Permalink'] : permalink,
+      tags: meta.containsKey('Tags') ? meta['Tags'].split(',') : null,
+      isPage: meta.containsKey('Page') ? meta['Page'] == 'yes' : false,
+      isDraft: pathutil.basenameWithoutExtension(file.path).toLowerCase().contains('[draft]'),
+      bodyStartLine: int.parse(meta['BodyStartLine']),
+    );
   }
+
+  static final _imgRE = RegExp(r'<img(\s|[^>])*src=[' '"](?<src>[^' '"]*)[' '"]', multiLine: true);
 
   // Title: first '# title' or first '<h1>title</h1>' (TODO)
   // Blurb: the first few lines of content in plain text (TODO)
+  // Image: primary image (aka first image)
   // Date: metadata or file date (UTC)
   // Permalink: metadata or base filename no extension
   // Disqus: metadata or Permalink
   // Tags: metadata or nothing
+  // BodyStartLine: metadata
   static Future<Map<String, String>> _getMetadataFromFile(File file) async {
     var lines = await file.readAsLines();
     var metadataLines = List<String>();
+    var bodyStartLine = 0;
+    var metadata = Map<String, String>();
 
     if (file.isHtml) {
       /* HTML metadata example
@@ -91,7 +102,9 @@ class Metadata {
       ...
       */
       if (lines[0].trim() == '<!--') {
-        metadataLines.addAll(lines.skip(1).takeWhile((l) => l.trim() != '-->'));
+        var metalines = lines.skip(1).takeWhile((l) => l.trim() != '-->');
+        metadataLines.addAll(metalines);
+        bodyStartLine = metalines.length + 2; // skip the trailing '-->'
       }
     } else if (file.isMarkdown) {
       /* Markdown metadata example
@@ -101,18 +114,28 @@ class Metadata {
       # WebAssembly *explodes* client-side programming
       ...
       */
-      metadataLines.addAll(lines.map((l) => l.trim()).takeWhile((l) => l.isNotEmpty && !l.startsWith('#') && !l.startsWith('<')));
+      var metalines = lines.map((l) => l.trim()).takeWhile((l) => l.isNotEmpty && !l.startsWith('#') && !l.startsWith('<'));
+      metadataLines.addAll(metalines);
+      bodyStartLine = metalines.length + 1;
     } else {
       assert(false, 'must have HTML or Markdown file: ${file.path}');
     }
 
-    var metadata = Map<String, String>();
+    // grab "name: value" pairs
     if (metadataLines.isNotEmpty) {
       var map = yaml.loadYaml(metadataLines.join('\n')) as yaml.YamlMap;
-      for (var key in map.keys) {
-        metadata[key] = map[key].toString();
-      }
+      for (var key in map.keys) metadata[key] = map[key].toString();
     }
+
+    // the rest is the body of the content
+    metadata['BodyStartLine'] = bodyStartLine.toString();
+    var body = lines.skip(bodyStartLine).join('\n');
+
+    // grab image from the body of the content
+    var image = _imgRE.firstMatch(body)?.namedGroup('src');
+    if (image != null) metadata['Image'] = image;
+    assert(metadata['Image'] != null || !body.contains('<img'));
+
     return metadata;
   }
 }
