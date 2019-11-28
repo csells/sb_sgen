@@ -61,7 +61,7 @@ class Metadata {
 
     return Metadata(
       filename: file.path,
-      title: 'TODO', // TODO
+      title: meta['Title'],
       blurb: 'TODO', // TODO
       image: meta.containsKey('Image') ? Uri.parse(meta['Image']) : null,
       date: meta.containsKey('Date') ? Jiffy(meta['Date'], 'MM/dd/yyy').utc() : (await file.stat()).changed.toUtc(),
@@ -74,7 +74,9 @@ class Metadata {
     );
   }
 
-  static final _imgRE = RegExp(r'<img(\s|[^>])*src=[' '"](?<src>[^' '"]*)[' '"]', multiLine: true);
+  static final _htmlImgRE = RegExp(r'<img(\s|[^>])*src=[' '"](?<src>[^' '"]*)[' '"]', multiLine: true);
+  static final _htmlH1RE = RegExp(r'<h1>(?<title>[^<]*)<\/h1>');
+  static final _mdH1RE = RegExp(r'^#(?<title>.*$)');
 
   // Title: first '# title' or first '<h1>title</h1>' (TODO)
   // Blurb: the first few lines of content in plain text (TODO)
@@ -85,10 +87,9 @@ class Metadata {
   // Tags: metadata or nothing
   // BodyStartLine: metadata
   static Future<Map<String, String>> _getMetadataFromFile(File file) async {
-    var lines = await file.readAsLines();
-    var metadataLines = List<String>();
+    final lines = await file.readAsLines();
+    final metadataLines = List<String>();
     var bodyStartLine = 0;
-    var metadata = Map<String, String>();
 
     if (file.isHtml) {
       /* HTML metadata example
@@ -102,7 +103,7 @@ class Metadata {
       ...
       */
       if (lines[0].trim() == '<!--') {
-        var metalines = lines.skip(1).takeWhile((l) => l.trim() != '-->');
+        final metalines = lines.skip(1).takeWhile((l) => l.trim() != '-->');
         metadataLines.addAll(metalines);
         bodyStartLine = metalines.length + 2; // skip the trailing '-->'
       }
@@ -114,7 +115,7 @@ class Metadata {
       # WebAssembly *explodes* client-side programming
       ...
       */
-      var metalines = lines.map((l) => l.trim()).takeWhile((l) => l.isNotEmpty && !l.startsWith('#') && !l.startsWith('<'));
+      final metalines = lines.map((l) => l.trim()).takeWhile((l) => l.isNotEmpty && !l.startsWith('#') && !l.startsWith('<'));
       metadataLines.addAll(metalines);
       bodyStartLine = metalines.length + 1;
     } else {
@@ -122,8 +123,9 @@ class Metadata {
     }
 
     // grab "name: value" pairs
+    final metadata = Map<String, String>();
     if (metadataLines.isNotEmpty) {
-      var map = yaml.loadYaml(metadataLines.join('\n')) as yaml.YamlMap;
+      final map = yaml.loadYaml(metadataLines.join('\n')) as yaml.YamlMap;
       for (var key in map.keys) metadata[key] = map[key].toString();
     }
 
@@ -131,8 +133,16 @@ class Metadata {
     metadata['BodyStartLine'] = bodyStartLine.toString();
     var body = lines.skip(bodyStartLine).join('\n');
 
+    // grab title
+    final titleRE = file.isHtml ? _htmlH1RE : file.isMarkdown ? _mdH1RE : null;
+    assert(titleRE != null, 'must have HTML or Markdown file: ${file.path}');
+    var title = titleRE.firstMatch(body)?.namedGroup('title')?.trim();
+    if (title == null) title = lines.skip(bodyStartLine).take(1).first;
+    assert(title != null && title.isNotEmpty);
+    metadata['Title'] = title;
+
     // grab image from the body of the content
-    var image = _imgRE.firstMatch(body)?.namedGroup('src');
+    var image = _htmlImgRE.firstMatch(body)?.namedGroup('src');
     if (image != null) metadata['Image'] = image;
     assert(metadata['Image'] != null || !body.contains('<img'));
 
