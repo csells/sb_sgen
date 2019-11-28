@@ -151,7 +151,7 @@ class Metadata {
 
     // grab the blurb
     final someHtml = file.isHtml ? body.substring(0, 1024) : markdownToHtml(body.substring(0, 1024));
-    meta['Blurb'] = someHtml.replaceAll(_htmlStripTagsRE, ' ').trimLeft().stripLeading(title).trimLeft().replaceAll(_collapseWhitespaceRE, ' ').replaceAll(' .', '.').replaceAll(' ,', ',').replaceAll(' !', '!').replaceAll(' ?', '?').replaceAll(' ;', ';').truncateWithEllipsis(256);
+    meta['Blurb'] = someHtml.replaceAll(_htmlStripTagsRE, ' ').trimLeft().stripLeading(title).trimLeft().replaceAll(_collapseWhitespaceRE, ' ').replaceAll(' .', '.').replaceAll(' ,', ',').replaceAll(' !', '!').replaceAll(' ?', '?').replaceAll(' ;', ';').truncateWithEllipsis(512);
 
     return meta;
   }
