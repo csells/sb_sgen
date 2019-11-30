@@ -1,24 +1,59 @@
 import 'dart:io';
 import 'package:jiffy/jiffy.dart';
 import 'package:path/path.dart' as pathutil;
+import 'package:webfeed/webfeed.dart';
 import 'package:yaml/yaml.dart' as yaml;
 import 'package:meta/meta.dart';
 import 'package:markdown/markdown.dart';
 
 main(List<String> args) async {
-  var dir = '/Users/csells/Code/sb-blot';
-  var files = await Directory(dir).list(recursive: true).ofType<File>().where((f) => f.isMarkdown || f.isHtml).take(10).toList();
-  for (var meta in (await Metadata.fromFiles(files)).where((m) => !m.isDraft)) {
-    print('filename= ${meta.filename}');
-    print('  title= ${meta.title}');
-    print('  blurb= ${meta.blurb}');
-    print('  image= ${meta.image}');
-    print('  date= ${meta.date.toLocal()}');
-    print('  permalink= ${meta.permalink}');
-    print('  discus= ${meta.disqus}');
-    print('  tags= ${meta.tags}');
-    print('  isPage= ${meta.isPage}');
-  }
+  var sourcedir = '/Users/csells/Code/sb-blot';
+  var files = await Directory(sourcedir).list(recursive: true).ofType<File>().where((f) => f.isMarkdown || f.isHtml).take(10).toList();
+  var meta = (await Metadata.fromFiles(files)).where((m) => !m.isDraft);
+  // for (var meta in (await Metadata.fromFiles(files)).where((m) => !m.isDraft)) {
+  //   print('filename= ${meta.filename}');
+  //   print('  title= ${meta.title}');
+  //   print('  blurb= ${meta.blurb}');
+  //   print('  image= ${meta.image}');
+  //   print('  date= ${meta.date.toLocal()}');
+  //   print('  permalink= ${meta.permalink}');
+  //   print('  discus= ${meta.disqus}');
+  //   print('  tags= ${meta.tags}');
+  //   print('  isPage= ${meta.isPage}');
+  // }
+
+  var feed = AtomFeed(
+    id: Uri.parse('https://sellsbrothers.com'),
+    title: 'Marquee de Sells',
+    subtitle: 'Chris\'s insight outlet',
+    updated: DateTime.parse('2019-08-05T00:44:13Z'), // TODO: from newest file
+    icon: Uri.parse('http://blotcdn.com/blog_12688eba996c4a98b1ec3a945e78e4f1/_avatars/2daebd98-55ac-4462-b80d-a1bb7156ce67.jpg'), // TODO: non-Blot source
+    logo: Uri.parse('http://blotcdn.com/blog_12688eba996c4a98b1ec3a945e78e4f1/_avatars/2daebd98-55ac-4462-b80d-a1bb7156ce67.jpg'), // TODO: non-Blot source
+    authors: [
+      AtomPerson(name: 'Chris Sells', uri: Uri.parse('https://sellsbrothers.com'), email: 'csells@sellsbrothers.com'),
+    ],
+    categories: [
+      // TODO: validate that we got them all...
+      AtomCategory(term: 'fun', label: 'fun'),
+      AtomCategory(term: 'interview', label: 'interviewing'),
+      AtomCategory(term: 'spout', label: 'the spout'),
+    ],
+    links: [
+      AtomLink(rel: 'self', href: Uri.parse('https://sellsbrothers.com/feed.atom'), type: 'application/atom+xml'),
+    ],
+    rights: 'Copyright © 1995 - ${DateTime.now().year}',
+    items: meta
+        .map(
+          (m) => AtomItem(
+            id: m.permalink,
+            title: m.title,
+            categories: m.tags == null ? null : m.tags.map((t) => AtomCategory(term: t)).toList(),
+          ),
+        )
+        .toList(),
+  );
+
+  print(feed.toXml().toXmlString(pretty: true));
 }
 
 class Metadata {
