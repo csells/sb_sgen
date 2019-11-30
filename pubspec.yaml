@@ -11,6 +11,7 @@ dependencies:
   yaml:
   jiffy:
   markdown:
+  strings:
   webfeed:
     git:
       url: https://github.com/csells/webfeed

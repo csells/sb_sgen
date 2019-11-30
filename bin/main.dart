@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:jiffy/jiffy.dart';
 import 'package:path/path.dart' as pathutil;
+import 'package:strings/strings.dart';
 import 'package:webfeed/webfeed.dart';
 import 'package:yaml/yaml.dart' as yaml;
 import 'package:meta/meta.dart';
@@ -8,19 +10,29 @@ import 'package:markdown/markdown.dart';
 
 main(List<String> args) async {
   var sourcedir = '/Users/csells/Code/sb-blot';
-  var files = await Directory(sourcedir).list(recursive: true).ofType<File>().where((f) => f.isMarkdown || f.isHtml).take(10).toList();
-  var meta = (await Metadata.fromFiles(files)).where((m) => !m.isDraft);
-  // for (var meta in (await Metadata.fromFiles(files)).where((m) => !m.isDraft)) {
-  //   print('filename= ${meta.filename}');
-  //   print('  title= ${meta.title}');
-  //   print('  blurb= ${meta.blurb}');
-  //   print('  image= ${meta.image}');
-  //   print('  date= ${meta.date.toLocal()}');
-  //   print('  permalink= ${meta.permalink}');
-  //   print('  discus= ${meta.disqus}');
-  //   print('  tags= ${meta.tags}');
-  //   print('  isPage= ${meta.isPage}');
-  // }
+  var files = await Directory(sourcedir).list(recursive: true).ofType<File>().where((f) => f.isMarkdown || f.isHtml).toList();
+  var meta = (await Metadata.fromFiles(files)).where((m) => !m.isDraft && !m.isPage);
+  var categories = [
+    AtomCategory(term: 'interview', label: 'Interviewing'),
+    AtomCategory(term: 'win8', label: 'Windows 8'),
+    AtomCategory(term: 'spout', label: 'The Spout'),
+    AtomCategory(term: 'oslofeaturedcontent', label: 'Oslo'),
+    AtomCategory(term: 'osloeditorial', label: 'Oslo'),
+    AtomCategory(term: 'osloeditorial', label: '.NET'),
+    ...[
+      'fun',
+      'colophon',
+      'books',
+      'tools',
+      'conference',
+      'writing',
+      'book',
+      'money',
+      'data',
+      'telerik',
+      'oslo',
+    ].map((s) => AtomCategory(term: s, label: capitalize(s)))
+  ];
 
   var feed = AtomFeed(
     id: Uri.parse('https://sellsbrothers.com'),
@@ -32,12 +44,7 @@ main(List<String> args) async {
     authors: [
       AtomPerson(name: 'Chris Sells', uri: Uri.parse('https://sellsbrothers.com'), email: 'csells@sellsbrothers.com'),
     ],
-    categories: [
-      // TODO: validate that we got them all...
-      AtomCategory(term: 'fun', label: 'fun'),
-      AtomCategory(term: 'interview', label: 'interviewing'),
-      AtomCategory(term: 'spout', label: 'the spout'),
-    ],
+    categories: categories,
     links: [
       AtomLink(rel: 'self', href: Uri.parse('https://sellsbrothers.com/feed.atom'), type: 'application/atom+xml'),
     ],
@@ -47,13 +54,39 @@ main(List<String> args) async {
           (m) => AtomItem(
             id: m.permalink,
             title: m.title,
-            categories: m.tags == null ? null : m.tags.map((t) => AtomCategory(term: t)).toList(),
+            categories: m.tags == null ? null : m.tags.map((t) => categories.firstWhere((c) => c.term == t)).toList(),
+            published: m.date,
+            updated: m.date,
+            summary: AtomContent(text: m.blurb),
+            content: AtomContent(text: 'TODO'),
+            links: itemLinks(m),
           ),
         )
         .toList(),
   );
 
   print(feed.toXml().toXmlString(pretty: true));
+}
+
+List<AtomLink> itemLinks(Metadata m) => m.image == null
+    ? null
+    : [
+        AtomLink(rel: 'enclosure', type: mimetypeOf(m.image), href: m.image)
+      ];
+
+String mimetypeOf(Uri image) {
+  var ext = pathutil.extension(image.pathSegments.last).toLowerCase();
+  switch (ext) {
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpg';
+    case '.png':
+      return 'image/png';
+    case '.gif':
+      return 'image/gif';
+    default:
+      throw Exception('unknown image extesion: $ext');
+  }
 }
 
 class Metadata {
@@ -185,7 +218,8 @@ class Metadata {
     assert(meta['Image'] != null || !body.contains('<img'));
 
     // grab the blurb
-    final someHtml = file.isHtml ? body.substring(0, 1024) : markdownToHtml(body.substring(0, 1024));
+    final someContent = body.substring(0, min(body.length, 1024));
+    final someHtml = file.isHtml ? someContent : markdownToHtml(someContent);
     meta['Blurb'] = someHtml.replaceAll(_htmlStripTagsRE, ' ').trimLeft().stripLeading(title).trimLeft().replaceAll(_collapseWhitespaceRE, ' ').replaceAll(' .', '.').replaceAll(' ,', ',').replaceAll(' !', '!').replaceAll(' ?', '?').replaceAll(' ;', ';').truncateWithEllipsis(512);
 
     return meta;
