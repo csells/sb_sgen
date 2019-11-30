@@ -36,20 +36,20 @@ main(List<String> args) async {
     ].map((s) => AtomCategory(term: s, label: capitalize(s)))
   ].sortedBy((m) => m.label);
 
-  var feed = AtomFeed(
+  var atom = AtomFeed(
     id: Uri.parse('https://sellsbrothers.com'),
     title: 'Marquee de Sells',
     subtitle: 'Chris\'s insight outlet',
     updated: meta.first.date,
-    icon: Uri.parse('http://blotcdn.com/blog_12688eba996c4a98b1ec3a945e78e4f1/_avatars/2daebd98-55ac-4462-b80d-a1bb7156ce67.jpg'), // TODO: non-Blot source
-    logo: Uri.parse('http://blotcdn.com/blog_12688eba996c4a98b1ec3a945e78e4f1/_avatars/2daebd98-55ac-4462-b80d-a1bb7156ce67.jpg'), // TODO: non-Blot source
+    // TODO: non-Blot source
+    // icon: Uri.parse('http://blotcdn.com/blog_12688eba996c4a98b1ec3a945e78e4f1/_avatars/2daebd98-55ac-4462-b80d-a1bb7156ce67.jpg'),
+    // logo: Uri.parse('http://blotcdn.com/blog_12688eba996c4a98b1ec3a945e78e4f1/_avatars/2daebd98-55ac-4462-b80d-a1bb7156ce67.jpg'),
     authors: [
       AtomPerson(name: 'Chris Sells', uri: Uri.parse('https://sellsbrothers.com'), email: 'csells@sellsbrothers.com'),
     ],
     categories: categories,
     links: [
-      AtomLink(rel: 'alternate', href: Uri.parse('https://sellsbrothers.com/feed.rss'), type: 'application/rss+xml'),
-      AtomLink(rel: 'alternate', href: Uri.parse('https://sellsbrothers.com/feed.atom'), type: 'application/atom+xml'),
+      AtomLink(rel: 'self', href: Uri.parse('https://sellsbrothers.com/atom.feed')),
       // TODO: pagination links
     ],
     rights: 'Copyright © 1995 - ${DateTime.now().year}',
@@ -63,14 +63,16 @@ main(List<String> args) async {
             published: m.date,
             updated: m.date,
             summary: AtomContent(text: m.blurb),
-            content: AtomContent(text: m.file.isHtml ? m.file.readAsStringSync() : markdownToHtml(m.file.readAsStringSync())),
+            content: AtomContent(type: 'html', text: m.file.isHtml ? m.file.readAsStringSync() : markdownToHtml(m.file.readAsStringSync())),
             links: itemLinks(m),
           ),
         )
         .toList(),
   );
 
-  print(feed.toXml().toXmlString(pretty: true));
+  var atomfile = File(pathutil.join(opts.targetDir.path, 'feed.atom'));
+  await Directory(pathutil.dirname(atomfile.path)).create(recursive: true);
+  await atomfile.writeAsString(atom.toXml().toXmlString(pretty: true));
 }
 
 List<AtomLink> itemLinks(Metadata m) => m.image == null
@@ -151,7 +153,7 @@ class Metadata {
 
   static final _htmlImgRE = RegExp(r'<img(\s|[^>])*src=[' '"](?<src>[^' '"]*)[' '"]', multiLine: true);
   static final _htmlH1RE = RegExp(r'<h1>(?<title>[^<]*)<\/h1>');
-  static final _mdH1RE = RegExp(r'^#(?<title>.*$)', multiLine: true);
+  static final _mdH1RE = RegExp(r'^# (?<title>.*$)', multiLine: true);
   static final _htmlStripTagsRE = RegExp(r'<[^>]+>', multiLine: true);
   static final _collapseWhitespaceRE = RegExp(r'\s\s+');
 
