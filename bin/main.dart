@@ -7,18 +7,21 @@ import 'package:webfeed/webfeed.dart';
 import 'package:yaml/yaml.dart' as yaml;
 import 'package:meta/meta.dart';
 import 'package:markdown/markdown.dart';
+import 'package:dartx/dartx.dart';
+import 'arg_parser.dart';
 
 main(List<String> args) async {
-  var sourcedir = '/Users/csells/Code/sb-blot';
-  var files = await Directory(sourcedir).list(recursive: true).ofType<File>().where((f) => f.isMarkdown || f.isHtml).toList();
-  var meta = (await Metadata.fromFiles(files)).where((m) => !m.isDraft && !m.isPage);
+  final opts = ArgParser(args);
+  var files = await opts.sourceDir.list(recursive: true).ofType<File>().where((f) => f.isMarkdown || f.isHtml).toList();
+  var meta = (await Metadata.fromFiles(files, blurbLength: opts.blurbLength)).where((m) => !m.isDraft && !m.isPage).sortedByDescending((m) => m.date);
   var categories = [
     AtomCategory(term: 'interview', label: 'Interviewing'),
     AtomCategory(term: 'win8', label: 'Windows 8'),
     AtomCategory(term: 'spout', label: 'The Spout'),
     AtomCategory(term: 'oslofeaturedcontent', label: 'Oslo'),
     AtomCategory(term: 'osloeditorial', label: 'Oslo'),
-    AtomCategory(term: 'osloeditorial', label: '.NET'),
+    AtomCategory(term: '.net', label: '.NET'),
+    AtomCategory(term: 'book', label: 'Books'),
     ...[
       'fun',
       'colophon',
@@ -26,19 +29,18 @@ main(List<String> args) async {
       'tools',
       'conference',
       'writing',
-      'book',
       'money',
       'data',
       'telerik',
       'oslo',
     ].map((s) => AtomCategory(term: s, label: capitalize(s)))
-  ];
+  ].sortedBy((m) => m.label);
 
   var feed = AtomFeed(
     id: Uri.parse('https://sellsbrothers.com'),
     title: 'Marquee de Sells',
     subtitle: 'Chris\'s insight outlet',
-    updated: DateTime.parse('2019-08-05T00:44:13Z'), // TODO: from newest file
+    updated: meta.first.date,
     icon: Uri.parse('http://blotcdn.com/blog_12688eba996c4a98b1ec3a945e78e4f1/_avatars/2daebd98-55ac-4462-b80d-a1bb7156ce67.jpg'), // TODO: non-Blot source
     logo: Uri.parse('http://blotcdn.com/blog_12688eba996c4a98b1ec3a945e78e4f1/_avatars/2daebd98-55ac-4462-b80d-a1bb7156ce67.jpg'), // TODO: non-Blot source
     authors: [
@@ -46,10 +48,13 @@ main(List<String> args) async {
     ],
     categories: categories,
     links: [
-      AtomLink(rel: 'self', href: Uri.parse('https://sellsbrothers.com/feed.atom'), type: 'application/atom+xml'),
+      AtomLink(rel: 'alternate', href: Uri.parse('https://sellsbrothers.com/feed.rss'), type: 'application/rss+xml'),
+      AtomLink(rel: 'alternate', href: Uri.parse('https://sellsbrothers.com/feed.atom'), type: 'application/atom+xml'),
+      // TODO: pagination links
     ],
     rights: 'Copyright © 1995 - ${DateTime.now().year}',
     items: meta
+        .take(opts.pageSize)
         .map(
           (m) => AtomItem(
             id: m.permalink,
@@ -58,7 +63,7 @@ main(List<String> args) async {
             published: m.date,
             updated: m.date,
             summary: AtomContent(text: m.blurb),
-            content: AtomContent(text: 'TODO'),
+            content: AtomContent(text: m.file.isHtml ? m.file.readAsStringSync() : markdownToHtml(m.file.readAsStringSync())),
             links: itemLinks(m),
           ),
         )
@@ -90,20 +95,20 @@ String mimetypeOf(Uri image) {
 }
 
 class Metadata {
-  final String filename;
+  final File file;
   final String title;
   final String blurb;
   final Uri image;
   final DateTime date;
-  final String permalink;
-  final String disqus;
+  final Uri permalink;
+  final Uri disqus;
   final List<String> tags;
   final bool isPage;
   final bool isDraft;
   final int bodyStartLine;
 
   Metadata({
-    @required this.filename,
+    @required this.file,
     @required this.title,
     @required this.blurb,
     @required this.image,
@@ -116,26 +121,27 @@ class Metadata {
     @required this.bodyStartLine,
   });
 
-  static Future<List<Metadata>> fromFiles(Iterable<File> files) async {
+  static Future<List<Metadata>> fromFiles(Iterable<File> files, {int blurbLength}) async {
     var metadata = List<Metadata>();
-    for (var file in files) {
-      metadata.add(await Metadata.fromFile(file));
-    }
+    for (var file in files) metadata.add(await Metadata.fromFile(file, blurbLength: blurbLength));
     return metadata;
   }
 
-  static Future<Metadata> fromFile(File file) async {
-    final meta = await _getMetadataFromFile(file);
-    final permalink = meta.containsKey('Permalink') ? meta['Permalink'] : pathutil.basenameWithoutExtension(file.path);
+  static final _baseUrl = 'https://sellsbrothers.com/';
+  static String permaFromTitle(String title) => title.toLowerCase().replaceAll(' ', '-');
+
+  static Future<Metadata> fromFile(File file, {int blurbLength}) async {
+    final meta = await _getMetadataFromFile(file, blurbLength: blurbLength);
+    final permalink = Uri.parse(_baseUrl + (meta.containsKey('Permalink') ? meta['Permalink'] : permaFromTitle(meta['Title'])));
 
     return Metadata(
-      filename: file.path,
+      file: file,
       title: meta['Title'],
       blurb: meta['Blurb'],
       image: meta.containsKey('Image') ? Uri.parse(meta['Image']) : null,
       date: meta.containsKey('Date') ? Jiffy(meta['Date'], 'MM/dd/yyy').utc() : (await file.stat()).changed.toUtc(),
       permalink: permalink,
-      disqus: meta.containsKey('Disqus') ? meta['Permalink'] : permalink,
+      disqus: meta.containsKey('Disqus') ? Uri.parse(meta['Disqus']) : permalink,
       tags: meta.containsKey('Tags') ? meta['Tags'].split(',') : null,
       isPage: meta.containsKey('Page') ? meta['Page'] == 'yes' : false,
       isDraft: pathutil.basenameWithoutExtension(file.path).toLowerCase().contains('[draft]'),
@@ -145,7 +151,7 @@ class Metadata {
 
   static final _htmlImgRE = RegExp(r'<img(\s|[^>])*src=[' '"](?<src>[^' '"]*)[' '"]', multiLine: true);
   static final _htmlH1RE = RegExp(r'<h1>(?<title>[^<]*)<\/h1>');
-  static final _mdH1RE = RegExp(r'^#(?<title>.*$)');
+  static final _mdH1RE = RegExp(r'^#(?<title>.*$)', multiLine: true);
   static final _htmlStripTagsRE = RegExp(r'<[^>]+>', multiLine: true);
   static final _collapseWhitespaceRE = RegExp(r'\s\s+');
 
@@ -157,7 +163,7 @@ class Metadata {
   // Disqus: metadata or Permalink
   // Tags: metadata or nothing
   // BodyStartLine: metadata
-  static Future<Map<String, String>> _getMetadataFromFile(File file) async {
+  static Future<Map<String, String>> _getMetadataFromFile(File file, {int blurbLength}) async {
     final lines = await file.readAsLines();
     final metadataLines = List<String>();
     var bodyStartLine = 0;
@@ -218,9 +224,9 @@ class Metadata {
     assert(meta['Image'] != null || !body.contains('<img'));
 
     // grab the blurb
-    final someContent = body.substring(0, min(body.length, 1024));
+    final someContent = body.substring(0, min(body.length, blurbLength * 2));
     final someHtml = file.isHtml ? someContent : markdownToHtml(someContent);
-    meta['Blurb'] = someHtml.replaceAll(_htmlStripTagsRE, ' ').trimLeft().stripLeading(title).trimLeft().replaceAll(_collapseWhitespaceRE, ' ').replaceAll(' .', '.').replaceAll(' ,', ',').replaceAll(' !', '!').replaceAll(' ?', '?').replaceAll(' ;', ';').truncateWithEllipsis(512);
+    meta['Blurb'] = someHtml.replaceAll(_htmlStripTagsRE, ' ').trimLeft().stripLeading(title).trimLeft().replaceAll(_collapseWhitespaceRE, ' ').replaceAll(' .', '.').replaceAll(' ,', ',').replaceAll(' !', '!').replaceAll(' ?', '?').replaceAll(' ;', ';').truncateWithEllipsis(blurbLength);
 
     return meta;
   }
