@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:jiffy/jiffy.dart';
@@ -46,7 +47,10 @@ class SiteGenerator {
     var files = await options.sourceDir.list(recursive: true).ofType<File>().toList();
     for (var file in files) {
       var info = await _generateFile(file);
-      if (info.feed) feedFiles.add(info);
+      if (info.feed) {
+        assert(info.file.isHtml); // should only be feeding HTML files
+        feedFiles.add(info);
+      }
     }
     feedFiles.sort((lhs, rhs) => rhs.date.compareTo(lhs.date));
 
@@ -76,7 +80,7 @@ class SiteGenerator {
     // generate the first page of the feed
     // TODO: generate the rest of the feed pages, too
     var atom = AtomFeed(
-      id: Uri.parse('https://sellsbrothers.com'),
+      id: Uri.parse(_baseUrl),
       title: 'Marquee de Sells',
       subtitle: 'Chris\'s insight outlet',
       updated: feedFiles.first.date,
@@ -84,11 +88,11 @@ class SiteGenerator {
       // icon: Uri.parse('http://blotcdn.com/blog_12688eba996c4a98b1ec3a945e78e4f1/_avatars/2daebd98-55ac-4462-b80d-a1bb7156ce67.jpg'),
       // logo: Uri.parse('http://blotcdn.com/blog_12688eba996c4a98b1ec3a945e78e4f1/_avatars/2daebd98-55ac-4462-b80d-a1bb7156ce67.jpg'),
       authors: [
-        AtomPerson(name: 'Chris Sells', uri: Uri.parse('https://sellsbrothers.com'), email: 'csells@sellsbrothers.com'),
+        AtomPerson(name: 'Chris Sells', uri: Uri.parse(_baseUrl), email: 'csells@sellsbrothers.com'),
       ],
       categories: categories,
       links: [
-        AtomLink(rel: 'self', href: Uri.parse('https://sellsbrothers.com/atom.feed')),
+        AtomLink(rel: 'self', href: Uri.parse('$_baseUrl/atom.feed')),
         // TODO: pagination links
       ],
       rights: 'Copyright © 1995 - ${DateTime.now().year}',
@@ -103,7 +107,7 @@ class SiteGenerator {
               published: m.date,
               updated: m.date,
               summary: AtomContent(text: m.blurb),
-              content: AtomContent(type: 'html', text: m.file.isHtml ? m.file.readAsStringSync() : markdownToHtml(m.file.readAsStringSync())),
+              content: AtomContent(type: 'html', text: m.file.readAsStringSync()),
               links: itemLinks(m),
             ),
           )
@@ -116,7 +120,10 @@ class SiteGenerator {
     await atomfile.writeAsString(atom.toXml().toXmlString(pretty: true));
   }
 
-  static final _baseUrl = 'https://sellsbrothers.com/';
+  // TODO: remove (local debugging)
+  static final _baseUrl = 'http://localhost:8080/';
+  //static final _baseUrl = 'https://sellsbrothers.com/';
+
   static final _imgRE = RegExp(r'<img(\s|[^>])*src=[' '"](?<src>[^' '"]*)[' '"]', multiLine: true);
   static final _h1RE = RegExp(r'<h1>(?<title>[^<]*)<\/h1>');
   static final _stripTagsRE = RegExp(r'<[^>]+>', multiLine: true);
@@ -165,6 +172,11 @@ class SiteGenerator {
     final lines = await sourcefile.readAsLines();
     final metadataLines = List<String>();
     var bodyStartLine = 0;
+
+    // TODO: remove (local debugging)
+    for (var i = 0; i != lines.length; ++i) {
+      lines[i] = lines[i].replaceAll(RegExp(r'https?:\/\/w*\.?sellsbrothers.com\/'), 'http://127.0.0.1:8080/');
+    }
 
     if (sourcefile.isHtml) {
       /* HTML metadata example
@@ -253,6 +265,14 @@ class SiteGenerator {
 
     stdout.write('${sourcefile.path} => ${targetfile.path}...');
     if ((targetstat.type == FileSystemEntityType.notFound || sourcestat.modified.isAfter(targetstat.modified)) && !sourcefile.path.contains('/.git/')) {
+      // TODO: remove (local debugging)
+      if (targetfile.isHtml) {
+        assert(sourcefile.isHtml); // shouldn't be copying md files...
+        var html = (await sourcefile.readAsString()).replaceAll(RegExp(r'https?:\/\/w*\.?sellsbrothers.com\/'), 'http://127.0.0.1:8080/');
+        await writeAsStringIfNewer(sourcefile: sourcefile, targetfile: targetfile, html: html);
+        return;
+      }
+
       await Directory(pathutil.dirname(targetfile.path)).create(recursive: true);
       await sourcefile.copy(targetfile.path);
       print('copied');
