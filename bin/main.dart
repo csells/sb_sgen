@@ -43,7 +43,7 @@ class SiteGenerator {
   void generateSite() async {
     // generate the site, getting the files that need to be part of the feed
     var feedFiles = List<FileInfo>();
-    var files = await options.sourceDir.list(recursive: true).ofType<File>().take(100).toList();
+    var files = await options.sourceDir.list(recursive: true).ofType<File>().toList();
     for (var file in files) {
       var info = await _generateFile(file);
       if (info.feed) feedFiles.add(info);
@@ -147,10 +147,9 @@ class SiteGenerator {
 
   Future<FileInfo> _generateFile(File sourcefile) async {
     // calculate target file name
-    var relativeSourcepath = pathutil.relative(sourcefile.path, from: options.sourceDir.path);
-    var relativeTargetpath = sourcefile.isHtml ? relativeSourcepath : pathutil.withoutExtension(relativeSourcepath) + '.html';
+    final relativeSourcepath = pathutil.relative(sourcefile.path, from: options.sourceDir.path);
+    var relativeTargetpath = relativeSourcepath;
     var targetfile = File(pathutil.absolute(options.targetDir.path, relativeTargetpath));
-    stdout.write('$relativeSourcepath => $relativeTargetpath...');
 
     // just copy the first if it's not a content file
     if (!sourcefile.isHtml && !sourcefile.isMarkdown) {
@@ -195,6 +194,10 @@ class SiteGenerator {
       final metalines = lines.map((l) => l.trim()).takeWhile((l) => l.isNotEmpty && !l.startsWith('#') && !l.startsWith('<'));
       metadataLines.addAll(metalines);
       bodyStartLine = metalines.length + 1;
+
+      // change target file from .md to .html extension
+      relativeTargetpath = pathutil.withoutExtension(relativeSourcepath) + '.html';
+      targetfile = File(pathutil.absolute(options.targetDir.path, relativeTargetpath));
     }
 
     // grab "name: value" pairs
@@ -248,7 +251,8 @@ class SiteGenerator {
     var sourcestat = await sourcefile.stat();
     var targetstat = await targetfile.stat();
 
-    if (targetstat.type == FileSystemEntityType.notFound || sourcestat.modified.isAfter(targetstat.modified)) {
+    stdout.write('${sourcefile.path} => ${targetfile.path}...');
+    if ((targetstat.type == FileSystemEntityType.notFound || sourcestat.modified.isAfter(targetstat.modified)) && !sourcefile.path.contains('/.git/')) {
       await Directory(pathutil.dirname(targetfile.path)).create(recursive: true);
       await sourcefile.copy(targetfile.path);
       print('copied');
@@ -262,10 +266,11 @@ class SiteGenerator {
     var sourcestat = await sourcefile.stat();
     var targetstat = await targetfile.stat();
 
-    if (targetstat.type == FileSystemEntityType.notFound || sourcestat.modified.isAfter(targetstat.modified)) {
+    stdout.write('${sourcefile.path} => ${targetfile.path}...');
+    if ((targetstat.type == FileSystemEntityType.notFound || sourcestat.modified.isAfter(targetstat.modified)) && !sourcefile.path.contains('/.git/')) {
       await Directory(pathutil.dirname(targetfile.path)).create(recursive: true);
       await targetfile.writeAsString(html);
-      print('copied');
+      print('written');
     } else {
       print('skipped');
     }
