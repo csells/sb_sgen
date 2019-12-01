@@ -1,13 +1,13 @@
 import 'dart:io';
 import 'package:args/args.dart' as args;
 
-class ArgParser {
+class Options {
   Directory get sourceDir => Directory(_parsed['source-dir']);
   Directory get targetDir => Directory(_parsed['target-dir']);
   int get blurbLength => int.parse(_parsed['blurb-length']);
   int get pageSize => int.parse(_parsed['page-size']);
 
-  ArgParser(List<String> args) {
+  Options.fromArgs(List<String> args) {
     _parser.addOption('source-dir', abbr: 's', help: 'source directory for authored content (required)', valueHelp: 'dir');
     _parser.addOption('target-dir', abbr: 't', help: 'target directory for generated content (required)', valueHelp: 'dir');
     _parser.addOption('page-size', abbr: 'p', defaultsTo: '15', help: 'number of items in each page of generated feed', valueHelp: 'size');
