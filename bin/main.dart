@@ -92,18 +92,17 @@ class SiteGenerator {
     };
 
     var atom = AtomFeed(
-      id: Uri.parse('${_baseUrl}${feedFilenames["self"].replaceAll("\\", "/")}'),
+      id: Uri.parse('${options.baseUrl}${feedFilenames["self"].replaceAll("\\", "/")}'),
       title: 'Marquee de Sells',
       subtitle: 'Chris\'s insight outlet',
       updated: feedFiles.first.date,
-      // TODO: non-Blot source
-      // icon: Uri.parse('http://blotcdn.com/blog_12688eba996c4a98b1ec3a945e78e4f1/_avatars/2daebd98-55ac-4462-b80d-a1bb7156ce67.jpg'),
-      // logo: Uri.parse('http://blotcdn.com/blog_12688eba996c4a98b1ec3a945e78e4f1/_avatars/2daebd98-55ac-4462-b80d-a1bb7156ce67.jpg'),
+      icon: Uri.parse('${options.baseUrl}/public/favicon.ico'),
+      logo: Uri.parse('${options.baseUrl}/public/images/vikingme128x128.jpg'),
       authors: [
-        AtomPerson(name: 'Chris Sells', uri: Uri.parse(_baseUrl), email: 'csells@sellsbrothers.com'),
+        AtomPerson(name: 'Chris Sells', uri: Uri.parse(options.baseUrl), email: 'csells@sellsbrothers.com'),
       ],
       categories: _atomCategories,
-      links: feedFilenames.keys.where((k) => feedFilenames[k] != null).map((k) => AtomLink(rel: k, href: Uri.parse('$_baseUrl${feedFilenames[k].replaceAll("\\", "/")}'))).toList(),
+      links: feedFilenames.keys.where((k) => feedFilenames[k] != null).map((k) => AtomLink(rel: k, href: Uri.parse('${options.baseUrl}${feedFilenames[k].replaceAll("\\", "/")}'))).toList(),
       rights: 'Copyright © 1995 - ${DateTime.now().year}',
       items: feedFiles
           .skip(page * options.pageSize)
@@ -142,10 +141,6 @@ class SiteGenerator {
     if (page == 0) return 'feed.atom';
     return pathutil.join('subfeeds', 'feed${page + 1}.atom');
   }
-
-  // TODO: remove (local debugging)
-  static final _baseUrl = 'http://localhost:8080/';
-  //static final _baseUrl = 'https://sellsbrothers.com/';
 
   static final _imgRE = RegExp(r'<img(\s|[^>])*src=[' '"](?<src>[^' '"]*)[' '"]', multiLine: true);
   static final _h1RE = RegExp(r'<h1>(?<title>[^<]*)<\/h1>');
@@ -196,9 +191,9 @@ class SiteGenerator {
     final metadataLines = List<String>();
     var bodyStartLine = 0;
 
-    // TODO: remove (local debugging)
+    // fix up the base URL
     for (var i = 0; i != lines.length; ++i) {
-      lines[i] = lines[i].replaceAll(RegExp(r'https?:\/\/w*\.?sellsbrothers.com\/'), 'http://127.0.0.1:8080/');
+      lines[i] = lines[i].replaceAll(RegExp(r'https?:\/\/w*\.?sellsbrothers.com\/'), options.baseUrl);
     }
 
     if (sourcefile.isHtml) {
@@ -265,7 +260,7 @@ class SiteGenerator {
     final someHtml = sourcefile.isHtml ? someContent : markdownToHtml(someContent);
     meta['Blurb'] = someHtml.replaceAll(_stripTagsRE, ' ').trimLeft().stripLeading(title).trimLeft().replaceAll(_collapseWhitespaceRE, ' ').replaceAll(' .', '.').replaceAll(' ,', ',').replaceAll(' !', '!').replaceAll(' ?', '?').replaceAll(' ;', ';').truncateWithEllipsis(options.blurbLength);
 
-    final permalink = Uri.parse(_baseUrl + (meta.containsKey('Permalink') ? meta['Permalink'] : permaFromTitle(meta['Title'])));
+    final permalink = Uri.parse(options.baseUrl + (meta.containsKey('Permalink') ? meta['Permalink'] : permaFromTitle(meta['Title'])));
     final isPage = meta.containsKey('Page') ? meta['Page'] == 'yes' : false;
 
     return FileInfo(
@@ -288,10 +283,10 @@ class SiteGenerator {
 
     stdout.write('${sourcefile.path} => ${targetfile.path}...');
     if ((targetstat.type == FileSystemEntityType.notFound || sourcestat.modified.isAfter(targetstat.modified)) && !sourcefile.path.contains('/.git/') && !sourcefile.path.endsWith('.dropbox') && !sourcefile.path.endsWith('.DS_Store')) {
-      // TODO: remove (local debugging)
+      // Fix up the base URL
       if (targetfile.isHtml) {
         assert(sourcefile.isHtml); // shouldn't be copying md files...
-        var html = (await sourcefile.readAsString()).replaceAll(RegExp(r'https?:\/\/w*\.?sellsbrothers.com\/'), 'http://127.0.0.1:8080/');
+        var html = (await sourcefile.readAsString()).replaceAll(RegExp(r'https?:\/\/w*\.?sellsbrothers.com\/'), options.baseUrl);
         await writeAsStringIfNewer(sourcefile: sourcefile, targetfile: targetfile, html: html);
         return;
       }

@@ -6,12 +6,14 @@ class Options {
   Directory get targetDir => Directory(_parsed['target-dir']);
   int get blurbLength => int.parse(_parsed['blurb-length']);
   int get pageSize => int.parse(_parsed['page-size']);
+  String get baseUrl => _parsed['base-url'];
 
   Options.fromArgs(List<String> args) {
     _parser.addOption('source-dir', abbr: 's', help: 'source directory for authored content (required)', valueHelp: 'dir');
     _parser.addOption('target-dir', abbr: 't', help: 'target directory for generated content (required)', valueHelp: 'dir');
     _parser.addOption('page-size', abbr: 'p', defaultsTo: '15', help: 'number of items in each page of generated feed', valueHelp: 'size');
-    _parser.addOption('blurb-length', abbr: 'b', defaultsTo: "512", help: 'maximum plain text blurb length', valueHelp: 'length');
+    _parser.addOption('blurb-length', abbr: 'l', defaultsTo: "512", help: 'maximum plain text blurb length', valueHelp: 'length');
+    _parser.addOption('base-url', abbr: 'b', defaultsTo: 'https://sellsbrothers.com/', help: 'base hosting url', valueHelp: 'https://domain.com:port/');
     _parser.addFlag('help', abbr: 'h', negatable: false, help: 'print usage');
     _parseWithExit(args);
   }
@@ -29,6 +31,7 @@ class Options {
       _parsed = _parser.parse(args);
       if (_parsed['help']) _printUsageAndExit();
       for (var a in _requiredArgs) if (!_parsed.wasParsed(a)) _printUsageAndExit(e: Exception('missing required arg: $a'));
+      if (!baseUrl.endsWith('/')) _printUsageAndExit(e: Exception('base-url must end in /'));
     } catch (e) {
       _printUsageAndExit(e: e);
     }
