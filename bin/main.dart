@@ -287,7 +287,7 @@ class SiteGenerator {
     var targetstat = await targetfile.stat();
 
     stdout.write('${sourcefile.path} => ${targetfile.path}...');
-    if ((targetstat.type == FileSystemEntityType.notFound || sourcestat.modified.isAfter(targetstat.modified)) && !sourcefile.path.contains('/.git/')) {
+    if ((targetstat.type == FileSystemEntityType.notFound || sourcestat.modified.isAfter(targetstat.modified)) && !sourcefile.path.contains('/.git/') && !sourcefile.path.endsWith('.dropbox') && !sourcefile.path.endsWith('.DS_Store')) {
       // TODO: remove (local debugging)
       if (targetfile.isHtml) {
         assert(sourcefile.isHtml); // shouldn't be copying md files...
