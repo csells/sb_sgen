@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:jiffy/jiffy.dart';
@@ -54,33 +53,46 @@ class SiteGenerator {
     }
     feedFiles.sort((lhs, rhs) => rhs.date.compareTo(lhs.date));
 
-    // atom feed categories
-    var categories = [
-      AtomCategory(term: 'interview', label: 'Interviewing'),
-      AtomCategory(term: 'win8', label: 'Windows 8'),
-      AtomCategory(term: 'spout', label: 'The Spout'),
-      AtomCategory(term: 'oslofeaturedcontent', label: 'Oslo'),
-      AtomCategory(term: 'osloeditorial', label: 'Oslo'),
-      AtomCategory(term: '.net', label: '.NET'),
-      AtomCategory(term: 'book', label: 'Books'),
-      ...[
-        'fun',
-        'colophon',
-        'books',
-        'tools',
-        'conference',
-        'writing',
-        'money',
-        'data',
-        'telerik',
-        'oslo',
-      ].map((s) => AtomCategory(term: s, label: capitalize(s)))
-    ].sortedBy((m) => m.label);
+    // generate the atom feeds
+    for (var page = 0; page * options.pageSize < feedFiles.length; ++page) _generateAtomFeed(feedFiles, page);
+  }
 
-    // generate the first page of the feed
-    // TODO: generate the rest of the feed pages, too
+  static final List<AtomCategory> _atomCategories = [
+    AtomCategory(term: 'interview', label: 'Interviewing'),
+    AtomCategory(term: 'win8', label: 'Windows 8'),
+    AtomCategory(term: 'spout', label: 'The Spout'),
+    AtomCategory(term: 'oslofeaturedcontent', label: 'Oslo'),
+    AtomCategory(term: 'osloeditorial', label: 'Oslo'),
+    AtomCategory(term: '.net', label: '.NET'),
+    AtomCategory(term: 'book', label: 'Books'),
+    ...[
+      'fun',
+      'colophon',
+      'books',
+      'tools',
+      'conference',
+      'writing',
+      'money',
+      'data',
+      'telerik',
+      'oslo',
+    ].map((s) => AtomCategory(term: s, label: capitalize(s)))
+  ].sortedBy((m) => m.label);
+
+  void _generateAtomFeed(List<FileInfo> feedFiles, int page) async {
+    var pageSize = min(feedFiles.length - page * options.pageSize, options.pageSize);
+    assert(pageSize > 0);
+
+    var feedFilenames = {
+      'first': _atomFeedFilename(page: 0, itemCount: feedFiles.length),
+      'last': _atomFeedFilename(page: feedFiles.length ~/ options.pageSize, itemCount: feedFiles.length),
+      'previous': _atomFeedFilename(page: page - 1, itemCount: feedFiles.length),
+      'next': _atomFeedFilename(page: page + 1, itemCount: feedFiles.length),
+      'self': _atomFeedFilename(page: page, itemCount: feedFiles.length),
+    };
+
     var atom = AtomFeed(
-      id: Uri.parse(_baseUrl),
+      id: Uri.parse('${_baseUrl}${feedFilenames["self"].replaceAll("\\", "/")}'),
       title: 'Marquee de Sells',
       subtitle: 'Chris\'s insight outlet',
       updated: feedFiles.first.date,
@@ -90,20 +102,17 @@ class SiteGenerator {
       authors: [
         AtomPerson(name: 'Chris Sells', uri: Uri.parse(_baseUrl), email: 'csells@sellsbrothers.com'),
       ],
-      categories: categories,
-      links: [
-        AtomLink(rel: 'self', href: Uri.parse('$_baseUrl/atom.feed')),
-        // TODO: pagination links
-      ],
+      categories: _atomCategories,
+      links: feedFilenames.keys.where((k) => feedFilenames[k] != null).map((k) => AtomLink(rel: k, href: Uri.parse('$_baseUrl${feedFilenames[k].replaceAll("\\", "/")}'))).toList(),
       rights: 'Copyright © 1995 - ${DateTime.now().year}',
       items: feedFiles
-          .where((i) => i.feed)
-          .take(options.pageSize)
+          .skip(page * options.pageSize)
+          .take(pageSize)
           .map(
             (m) => AtomItem(
               id: m.permalink,
               title: m.title,
-              categories: m.tags == null ? null : m.tags.map((t) => categories.firstWhere((c) => c.term == t)).toList(),
+              categories: m.tags == null ? null : m.tags.map((t) => _atomCategories.firstWhere((c) => c.term == t)).toList(),
               published: m.date,
               updated: m.date,
               summary: AtomContent(text: m.blurb),
@@ -115,9 +124,23 @@ class SiteGenerator {
     );
 
     // write the atom feed
-    var atomfile = File(pathutil.join(options.targetDir.path, 'feed.atom'));
+    var atomfile = File(pathutil.join(options.targetDir.path, feedFilenames['self']));
     await Directory(pathutil.dirname(atomfile.path)).create(recursive: true);
     await atomfile.writeAsString(atom.toXml().toXmlString(pretty: true));
+  }
+
+  // page -1: null
+  // page  0: 'feed.atom'
+  // page  1: 'subfeeds/feed2.atom'
+  // ...
+  // page  N: 'subfeeds/feed{N+1}.atom'
+  // page  M > possible number of pages: null
+  // result returned as a relative file name using the OS-specific path separation character
+  // when used as a relative URL path, remember to replace \ with / in case you're running on Windows...
+  String _atomFeedFilename({int page, int itemCount}) {
+    if (page < 0 || page * options.pageSize > itemCount) return null;
+    if (page == 0) return 'feed.atom';
+    return pathutil.join('subfeeds', 'feed${page + 1}.atom');
   }
 
   // TODO: remove (local debugging)
